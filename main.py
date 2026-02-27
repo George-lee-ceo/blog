@@ -654,16 +654,20 @@ def generate_ai_image(keyword, image_index):
         # Pixabay API URL
         url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={safe_keyword}&image_type=photo&orientation=horizontal&per_page=3&min_width=1000"
         
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
         response.raise_for_status()
         data = response.json()
         
         if data.get("totalHits", 0) > 0 and len(data.get("hits", [])) > 0:
-            # 첫 번째 이미지 URL
-            image_url = data["hits"][0]["largeImageURL"]
+            # 첫 번째 이미지 URL (largeImageURL은 429 에러 발생할 수 있어 webformatURL 사용)
+            image_url = data["hits"][0]["webformatURL"]
             
             # 다운로드
-            img_response = requests.get(image_url, timeout=30)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://pixabay.com/'
+            }
+            img_response = requests.get(image_url, headers=headers, timeout=30)
             img_response.raise_for_status()
             
             # 로컬에 저장 (.jpg 형식)
@@ -677,16 +681,20 @@ def generate_ai_image(keyword, image_index):
             print(f"    ⚠ 검색 결과 없음. 기본 키워드로 재시도...")
             # 기본 키워드로 재시도 (피트니스 관련 기본 이미지)
             fallback_url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q=gym+workout&image_type=photo&orientation=horizontal&category=health&per_page=10"
-            f_response = requests.get(fallback_url, timeout=10)
+            f_response = requests.get(fallback_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
             f_data = f_response.json()
             
             if f_data.get("totalHits", 0) > 0:
                 import random
                 # 여러 번 시도 시 중복 방지를 위해 무작위 선택
                 hit = random.choice(f_data["hits"])
-                image_url = hit["largeImageURL"]
+                image_url = hit["webformatURL"]
                 
-                img_response = requests.get(image_url, timeout=30)
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Referer': 'https://pixabay.com/'
+                }
+                img_response = requests.get(image_url, headers=headers, timeout=30)
                 image_path = os.path.join(AI_IMAGE_DIR, f"blog_image_{image_index + 1}.jpg")
                 with open(image_path, 'wb') as f:
                     f.write(img_response.content)
