@@ -43,12 +43,15 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/11f1KtleDHZcS7proAX06ySyEZei
 PHOTO_DIR = r"C:\당근헬스사진"
 BLOG_TITLE = None  # GPT로 동적 생성 (기본값 없음)
 
-# OpenAI API 설정 (DALL-E 이미지 생성용)
+# OpenAI API 설정 (텍스트 처리용) 및 Pixabay API 설정 (무료 이미지용)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+PIXABAY_API_KEY = os.environ.get("PIXABAY_API_KEY")
 
 if not OPENAI_API_KEY:
     print("  ❌ 오류: OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
-    # secret.json 혹은 환경변수에서 읽어오도록 안내 가능
+if not PIXABAY_API_KEY:
+    print("  ❌ 오류: PIXABAY_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
+
 
 WAIT_TIMEOUT = 15  # 요소 대기 최대 초
 
@@ -604,7 +607,7 @@ def extract_image_context(parts, index):
 
 
 def generate_image_prompt(before_text, after_text, image_index):
-    """GPT를 사용하여 이미지 생성에 적합한 영문 프롬프트를 생성합니다."""
+    """GPT를 사용하여 Pixabay 검색에 적합한 영문 키워드를 생성합니다."""
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -612,55 +615,88 @@ def generate_image_prompt(before_text, after_text, image_index):
                 {
                     "role": "system",
                     "content": (
-                        "You are a professional image prompt creator for a Korean health & fitness blog. "
-                        "Generate a short, vivid English image prompt for DALL-E based on the blog content context. "
-                        "The image should be: realistic photo style, bright and motivating, related to health/fitness/wellness. "
-                        "Do NOT include any text or words in the image. "
-                        "Keep the prompt under 100 words. Return ONLY the prompt, nothing else."
+                        "You are a professional keyword extractor for a Korean health & fitness blog. "
+                        "Read the blog content context and extract 1 or 2 English keywords suitable for searching on a stock photo website like Pixabay. "
+                        "The keywords should be related to health, fitness, workout, diet, or wellness. "
+                        "Return ONLY the keywords (e.g., 'gym workout' or 'healthy food'), nothing else."
                     )
                 },
                 {
                     "role": "user",
-                    "content": f"Blog section before image #{image_index + 1}:\n{before_text}\n\nBlog section after image:\n{after_text}\n\nGenerate an image prompt that fits between these sections."
+                    "content": f"Blog section before image #{image_index + 1}:\n{before_text}\n\nBlog section after image:\n{after_text}\n\nExtract 1-2 English search keywords."
                 }
             ],
-            max_tokens=150,
+            max_tokens=20,
             temperature=0.7
         )
-        prompt = response.choices[0].message.content.strip()
-        print(f"    → AI 프롬프트 생성: {prompt[:80]}...")
-        return prompt
+        keyword = response.choices[0].message.content.strip()
+        # 긴 문장이 나온 경우 대비
+        if len(keyword) > 30:
+            keyword = "fitness"
+            
+        print(f"    → AI 검색 키워드 추출: '{keyword}'")
+        return keyword
     except Exception as e:
-        print(f"    ⚠ 프롬프트 생성 실패: {e}")
-        return "A bright, motivating photo of a healthy lifestyle, fitness and wellness concept, natural lighting, professional photography"
+        print(f"    ⚠ 키워드 추출 실패: {e}")
+        return "fitness health"
 
 
-def generate_ai_image(prompt, image_index):
-    """DALL-E API로 이미지를 생성하고 로컬에 저장합니다."""
+def generate_ai_image(keyword, image_index):
+    """Pixabay API로 이미지를 검색하고 로컬에 다운로드하여 경로를 반환합니다."""
     try:
-        print(f"    → DALL-E로 이미지 생성 중... (약 10~20초 소요)")
-        response = client.images.generate(
-            model="dall-e-3",
-            prompt=prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1,
-        )
-        image_url = response.data[0].url
+        if not PIXABAY_API_KEY:
+            raise ValueError("PIXABAY_API_KEY가 설정되지 않았습니다.")
+            
+        print(f"    → Pixabay에서 이미지 검색 중... (키워드: {keyword})")
+        from urllib.parse import quote
+        safe_keyword = quote(keyword)
         
-        # 이미지 다운로드
-        img_response = requests.get(image_url, timeout=30)
-        img_response.raise_for_status()
+        # Pixabay API URL
+        url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q={safe_keyword}&image_type=photo&orientation=horizontal&per_page=3&min_width=1000"
         
-        # 로컬에 저장
-        image_path = os.path.join(AI_IMAGE_DIR, f"blog_image_{image_index + 1}.png")
-        with open(image_path, 'wb') as f:
-            f.write(img_response.content)
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
         
-        print(f"    ✓ 이미지 생성 완료: {image_path}")
-        return image_path
+        if data.get("totalHits", 0) > 0 and len(data.get("hits", [])) > 0:
+            # 첫 번째 이미지 URL
+            image_url = data["hits"][0]["largeImageURL"]
+            
+            # 다운로드
+            img_response = requests.get(image_url, timeout=30)
+            img_response.raise_for_status()
+            
+            # 로컬에 저장 (.jpg 형식)
+            image_path = os.path.join(AI_IMAGE_DIR, f"blog_image_{image_index + 1}.jpg")
+            with open(image_path, 'wb') as f:
+                f.write(img_response.content)
+            
+            print(f"    ✓ Pixabay 이미지 다운로드 완료: {image_path}")
+            return image_path
+        else:
+            print(f"    ⚠ 검색 결과 없음. 기본 키워드로 재시도...")
+            # 기본 키워드로 재시도 (피트니스 관련 기본 이미지)
+            fallback_url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q=gym+workout&image_type=photo&orientation=horizontal&category=health&per_page=10"
+            f_response = requests.get(fallback_url, timeout=10)
+            f_data = f_response.json()
+            
+            if f_data.get("totalHits", 0) > 0:
+                import random
+                # 여러 번 시도 시 중복 방지를 위해 무작위 선택
+                hit = random.choice(f_data["hits"])
+                image_url = hit["largeImageURL"]
+                
+                img_response = requests.get(image_url, timeout=30)
+                image_path = os.path.join(AI_IMAGE_DIR, f"blog_image_{image_index + 1}.jpg")
+                with open(image_path, 'wb') as f:
+                    f.write(img_response.content)
+                print(f"    ✓ 기본 이미지 다운로드 완료: {image_path}")
+                return image_path
+            
+            return None
+            
     except Exception as e:
-        print(f"    ❌ 이미지 생성 실패: {e}")
+        print(f"    ❌ 이미지 다운로드 실패: {e}")
         return None
 
 
