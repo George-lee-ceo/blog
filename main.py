@@ -162,11 +162,14 @@ def enhance_blog_content(blog_content):
                         "2. 본문 내용에 친근한 이모지와 이모티콘을 적절히 추가\n"
                         "3. 글의 문맥이 전환되거나 강조하고 싶은 부분, 시작과 끝부분 등에 '**[스티커]**' 태그를 6~10개 정도 자연스럽게 삽입 (나중에 고양이 스티커로 변환됨)\n"
                         "4. 모바일에 최적화되도록 문단을 짧게(1~2문장) 나누고 줄바꿈을 자주 할 것\n"
-                        "5. 기존의 [사진첨부], [구분선], [스티커] 태그는 삭제하지 말고 반드시 그대로 유지할 것\n"
+                        "5. 기존의 [헬스장사진], [무료사진], [구분선], [스티커] 태그는 삭제하지 말고 반드시 그대로 유지할 것. (절대 임의로 [사진첨부] 등으로 변경하지 말 것)\n"
                         "6. 인용구 처리를 위해 인용하고 싶은 문장 앞뒤로 '[인용구] 문장내용 [/인용구]' 형식으로 감쌀 것\n"
                         "7. 중요도에 따라 강조가 필요한 곳은 글자 크기를 키우기 위해 줄 앞에 '# ' 또는 '## '을 붙일 것 (제목 크기)\n"
                         "8. 핵심 단어나 문장은 양옆에 '**'를 붙여서 굵게(볼드체) 처리할 것 (예: **중요한 내용**)\n"
                         "9. 전체적인 내용과 문맥은 원본을 유지하면서 가독성만 높일 것\n\n"
+                        "10. 원본에 있는 [사진첨부] 태그는 문맥에 맞춰서 다음 두 개 중 하나로 변환할 것:\n"
+                        "    - 헬스장 시설, 기구, 트레이너, 회원 모습 등이 들어가야 자연스러운 위치에는 '[헬스장사진]'\n"
+                        "    - 음식, 영양, 일반적인 운동 자세, 지식 설명 등 정보성 사진이 필요한 위치에는 '[무료사진]'\n\n"
                         "출력 형식은 반드시 첫 줄에 제목, 그 다음 줄부터 완성된 본문을 출력하세요."
                     )
                 },
@@ -594,10 +597,10 @@ else:
 # ──────────────────────────────────────────────
 # AI 이미지 생성 함수
 # ──────────────────────────────────────────────
-def extract_image_context(parts, index):
-    """[사진첨부] 태그 주변 텍스트를 추출하여 이미지 생성 프롬프트를 만듭니다."""
-    before = parts[index].strip() if index < len(parts) else ""
-    after = parts[index + 1].strip() if index + 1 < len(parts) else ""
+def extract_image_context(segments, index):
+    """태그 주변 텍스트를 추출하여 이미지 생성 프롬프트를 만듭니다."""
+    before = segments[index].strip() if index < len(segments) else ""
+    after = segments[index + 2].strip() if index + 2 < len(segments) else ""
     
     # 앞뒤 텍스트에서 핵심 내용 추출 (최대 200자씩)
     before_summary = before[-200:] if len(before) > 200 else before
@@ -895,22 +898,61 @@ def _return_to_body(driver, body_elem, body_selectors):
 
 
 # ──────────────────────────────────────────────
-# 5-1. AI 이미지 미리 생성
+# 5-1. 본문 분석 및 사진 준비
 # ──────────────────────────────────────────────
-print("\n[6/7] AI 이미지 생성 중...")
-parts = blog_content.split("[사진첨부]")
-num_images = len(parts) - 1
-print(f"  → 텍스트 조각 {len(parts)}개, 생성할 이미지 {num_images}개")
+print("\n[6/7] 필요한 이미지 파악 및 준비 중...")
+import re
+import random
+import glob
 
-generated_images = []
-for img_idx in range(num_images):
-    print(f"\n  🎨 이미지 {img_idx + 1}/{num_images} 생성 중...")
-    before_text, after_text = extract_image_context(parts, img_idx)
-    prompt = generate_image_prompt(before_text, after_text, img_idx)
-    image_path = generate_ai_image(prompt, img_idx)
-    generated_images.append(image_path)
+# 태그 매칭 패턴
+img_tag_pattern = r'(\[헬스장사진\]|\[무료사진\]|\[사진첨부\])'
 
-print(f"\n  ✓ 총 {sum(1 for p in generated_images if p)}개 이미지 생성 완료")
+# 태그와 텍스트를 분리
+segments = re.split(img_tag_pattern, blog_content)
+img_tags_in_order = re.findall(img_tag_pattern, blog_content)
+
+print(f"  → 텍스트 내 이미지 태그 총 {len(img_tags_in_order)}개 발견")
+
+# 로컬 헬스장 사진 목록 준비
+local_photos = []
+if os.path.exists(PHOTO_DIR):
+    local_photos = glob.glob(os.path.join(PHOTO_DIR, "*.[jJ][pP][gG]")) + \
+                   glob.glob(os.path.join(PHOTO_DIR, "*.[jJ][pP][eE][gG]")) + \
+                   glob.glob(os.path.join(PHOTO_DIR, "*.[pP][nN][gG]"))
+    random.shuffle(local_photos)
+else:
+    print(f"  ⚠ 헬스장 사진 폴더({PHOTO_DIR})를 찾을 수 없습니다.")
+
+# 태그 순서대로 이미지 경로 저장
+prepared_images = []
+local_img_idx = 0
+
+# segments는 [텍스트, 태그, 텍스트, 태그, 텍스트...] 구조를 가짐
+for i in range(1, len(segments), 2):
+    tag = segments[i]
+    print(f"\n  📸 이미지 준비 중... (태그: {tag})")
+    
+    if tag == "[헬스장사진]" or (tag == "[사진첨부]" and not PIXABAY_API_KEY):
+        if local_img_idx < len(local_photos):
+            photo_path = local_photos[local_img_idx]
+            local_img_idx += 1
+            print(f"    ✓ 로컬 헬스장 사진 선택: {os.path.basename(photo_path)}")
+            prepared_images.append(photo_path)
+        else:
+            print("    ⚠ 준비된 로컬 헬스장 사진이 부족합니다. 무료 사진으로 대체합니다.")
+            before_text, after_text = extract_image_context(segments, i-1)
+            keyword = generate_image_prompt(before_text, after_text, len(prepared_images))
+            image_path = generate_ai_image(keyword, len(prepared_images))
+            prepared_images.append(image_path)
+            
+    elif tag == "[무료사진]" or tag == "[사진첨부]":
+        before_text, after_text = extract_image_context(segments, i-1)
+        keyword = generate_image_prompt(before_text, after_text, len(prepared_images))
+        image_path = generate_ai_image(keyword, len(prepared_images))
+        prepared_images.append(image_path)
+
+print(f"\n  ✓ 총 {sum(1 for p in prepared_images if p)}개 이미지 파일 준비 완료")
 
 # ──────────────────────────────────────────────
 # 5-2. 본문 작성 + 사진 첨부
@@ -1285,13 +1327,16 @@ def process_text_segment(driver, text, body_elem):
 
 print("\n[6/6] 본문 작성 및 사진 첨부 중...")
 
-for i, part in enumerate(parts):
+# segments 구조: [텍스트0, 태그1, 텍스트2, 태그3, 텍스트4...]
+for i in range(0, len(segments), 2):
     # 매 반복마다 팝업 닫기
     dismiss_editor_popups(driver)
     
+    text_part = segments[i]
+    
     # 텍스트 붙여넣기
-    if part.strip():
-        print(f"  → 텍스트 조각 {i+1}/{len(parts)} 처리 중...")
+    if text_part.strip():
+        print(f"  → 텍스트 조각 {i//2 + 1}/{len(segments)//2 + 1} 처리 중...")
         
         # 본문 영역 클릭하여 포커스 확보
         if body_elem:
@@ -1301,29 +1346,20 @@ for i, part in enumerate(parts):
             except Exception:
                 pass
         
-        process_text_segment(driver, part.strip(), body_elem)
+        process_text_segment(driver, text_part.strip(), body_elem)
         time.sleep(1)
-        
-        # 에디터 내용 길이 확인
-        try:
-            body_text = driver.execute_script("""
-                var content = document.querySelector('.se-content');
-                return content ? content.textContent.length : -1;
-            """)
-            print(f"    → 현재 에디터 내용 길이: {body_text}자")
-        except Exception:
-            pass
         
         actions = ActionChains(driver)
         actions.send_keys(Keys.ENTER).perform()
         time.sleep(0.5)
 
-    # 마지막 조각이 아니면 사진 첨부
-    if i < len(parts) - 1:
-        photo_path = generated_images[i] if i < len(generated_images) else None
+    # 마지막 조각이 아니면 태그에 해당하는 사진 첨부
+    if i + 1 < len(segments):
+        img_idx = i // 2
+        photo_path = prepared_images[img_idx] if img_idx < len(prepared_images) else None
         
         if photo_path and os.path.exists(photo_path):
-            print(f"  → AI 생성 사진 {i+1}/{num_images} 첨부 중...")
+            print(f"  → 이미지 {img_idx + 1}/{len(prepared_images)} 첨부 중... ({os.path.basename(photo_path)})")
             success = upload_photo_to_editor(driver, photo_path, body_elem, body_selectors)
             if not success:
                 print("    ⚠ 사진 첨부 실패. 텍스트만 계속 작성합니다.")
@@ -1331,7 +1367,7 @@ for i, part in enumerate(parts):
                 actions.send_keys(Keys.ENTER).perform()
                 time.sleep(0.5)
         else:
-            print(f"  ⚠ 이미지 {i+1} 생성 실패했으므로 건너뜁니다.")
+            print(f"  ⚠ 이미지 {img_idx + 1} 경로가 유효하지 않아 건너뜁니다.")
             actions = ActionChains(driver)
             actions.send_keys(Keys.ENTER).perform()
             time.sleep(0.5)
