@@ -158,19 +158,19 @@ def enhance_blog_content(blog_content):
                     "content": (
                         "당신은 네이버 블로그 포스팅 전문가입니다. "
                         "다음 건강/피트니스 블로그 원고를 읽고, 아래 조건에 맞게 내용을 풍성하게 만들어주세요.\n\n"
-                        "1. 매력적인 제목 생성 (첫 줄에 '제목: [생성된 제목]' 형식으로 작성)\n"
+                        "1. 매력적인 제목 생성 (반드시 첫 줄에 '제목: [생성된 제목]' 형식으로 작성하고, 반드시 줄바꿈(Enter) 2번을 해서 본문과 완전히 분리할 것)\n"
                         "2. 본문 내용에 친근한 이모지와 이모티콘을 적절히 추가\n"
                         "3. 글의 문맥이 전환되거나 강조하고 싶은 부분, 시작과 끝부분 등에 '**[스티커]**' 태그를 6~10개 정도 자연스럽게 삽입 (나중에 고양이 스티커로 변환됨)\n"
                         "4. 모바일에 최적화되도록 문단을 짧게(1~2문장) 나누고 줄바꿈을 자주 할 것\n"
                         "5. 기존의 [헬스장사진], [무료사진], [구분선], [스티커] 태그는 삭제하지 말고 반드시 그대로 유지할 것. (절대 임의로 위치를 바꾸거나 이름을 변경하지 말 것)\n"
-                        "6. 인용구 처리를 위해 **1줄 이내의 짧고 핵심적인 명언이나 강조 문구** 앞뒤로만 '[인용구] 문장내용 [/인용구]' 형식으로 감쌀 것. (문단 전체를 감싸지 말 것, 최대 2회 사용)\n"
+                        "6. 인용구 처리를 위해 **단 1문장짜리(20자 이내) 짧고 강렬한 핵심 문구** 앞뒤로만 '[인용구] 문장내용 [/인용구]' 형식으로 감쌀 것. (절대 두 문장 이상 긴 문단을 감싸지 말 것, 최대 2회 사용)\n"
                         "7. 중요도에 따라 강조가 필요한 곳은 글자 크기를 키우기 위해 줄 앞에 '# ' 또는 '## '을 붙일 것 (단, 첫 줄 제목 제외)\n"
                         "8. 핵심 단어나 문장은 양옆에 '**'를 붙여서 굵게(볼드체) 처리할 것\n"
                         "9. 원본에 있는 [사진첨부] 태그는 문맥에 맞춰서 다음 두 개 중 하나로 변환할 것:\n"
                         "    - 헬스장 시설, 기구, 트레이너, 회원 모습 등이 들어가야 자연스러운 위치에는 '[헬스장사진]'\n"
                         "    - 음식, 영양, 일반적인 운동 자세, 지식 설명 등 정보성 사진이 필요한 위치에는 '[무료사진]'\n"
                         "10. **모든 해시태그(#)**는 반드시 본문의 내용이 완전히 끝난 **맨 마지막 줄**에 모아서 작성할 것.\n\n"
-                        "출력 형식은 반드시 첫 줄에 딱 '제목: [생성된 제목]'만 작성하고, 두 번째 줄부터 본문을 시작하세요. 제목에 **나 # 같은 마크다운 기호를 쓰지 마세요."
+                        "출력 형식은 반드시 첫 줄에 딱 '제목: [생성된 제목]'만 작성한 뒤 두 번 이상 줄바꿈을 하고 본문을 시작하세요. 제목에 **나 # 같은 마크다운 기호를 쓰지 마세요."
                     )
                 },
                 {
@@ -196,18 +196,35 @@ def enhance_blog_content(blog_content):
                 content_lines.append(line)
                 continue
                 
-            # 정규식으로 마크다운 포함 제목 찾기 (예: **제목:**, # 제목: 등)
             match = re.match(r'^[\#\*\s]*제목:\s*(.*)', line_str, re.IGNORECASE)
             if match:
-                title = match.group(1).replace('**', '').replace('"', '').replace("'", '').strip()
+                extracted_title = match.group(1).replace('**', '').replace('"', '').replace("'", '').strip()
+                # AI가 줄바꿈을 빼먹어서 제목 라인에 본문이 붙어있는 경우 분리 (예: ...모든 것!최근 많은 사람들이...)
+                split_match = re.search(r'([!\?\.])([^\s])', extracted_title)
+                if split_match:
+                    split_idx = split_match.end(1)
+                    title = extracted_title[:split_idx].strip()
+                    content_lines.append(extracted_title[split_idx:].strip())
+                else:
+                    title = extracted_title
             elif "제목:" in line_str and len(content_lines) == 0:
-                # 첫 번째 문단에 '제목:'이 포함되어 있다면 그것도 제목으로 취급
-                title = line_str.replace("제목:", "").replace('**', '').replace('#', '').strip()
+                extracted_title = line_str.replace("제목:", "").replace('**', '').replace('#', '').strip()
+                split_match = re.search(r'([!\?\.])([^\s])', extracted_title)
+                if split_match:
+                    split_idx = split_match.end(1)
+                    title = extracted_title[:split_idx].strip()
+                    content_lines.append(extracted_title[split_idx:].strip())
+                else:
+                    title = extracted_title
             else:
                 content_lines.append(line)
                 
         enhanced_content = '\n'.join(content_lines).strip()
         
+        # 제목 앞머리에 무조건 [당근헬스] 부착
+        if not title.startswith("[당근헬스]"):
+            title = f"[당근헬스] {title}"
+            
         print(f"  ✓ AI 제목 생성: {title}")
         print(f"  ✓ AI 본문 보강 완료 (스티커/이모지 추가됨)")
         return title, enhanced_content
@@ -1148,6 +1165,210 @@ def set_editor_font(driver, font_name="바른히피"):
         print(f"    ⚠ 폰트 변경 실패: {e}")
     return False
 
+
+def insert_locations(driver):
+    """에디터 상단 장소 버튼을 눌러 지정된 5개 지점을 본문에 첨부합니다."""
+    locations = ["당근헬스 지내점", "당근헬스 김해점", "당근헬스 어방점", "당근헬스 구산점", "당근헬스 안동점"]
+    print("\n[  ] 장소(지도) 첨부 시작...")
+    
+    # 1. 장소 속성 버튼 클릭 (JS로 넓게 검색)
+    place_opened = False
+    for frame in [None, "mainFrame"]:
+        if frame:
+            driver.switch_to.default_content()
+            try: driver.switch_to.frame(frame)
+            except: continue
+        else:
+            driver.switch_to.default_content()
+        
+        opened = driver.execute_script("""
+            var btns = document.querySelectorAll('button, a, span, li, div');
+            for(var i=0; i<btns.length; i++){
+                var el = btns[i];
+                if(el.innerText && el.innerText.trim() === "장소"){
+                    if(el.tagName !== 'BUTTON') { 
+                        var btn = el.closest('button');
+                        if(btn) { btn.click(); return true; }
+                    }
+                    el.click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+        if opened:
+            place_opened = True
+            print("    → 장소 추가 팝업 열림 (JS click 성공)")
+            break
+            
+    if not place_opened:
+        print("    ⚠ 장소 추가 버튼을 찾지 못해 지도를 첨부할 수 없습니다.")
+        return
+        
+    driver.switch_to.default_content()
+    time.sleep(2)
+    
+    # 2. 각 지점명 검색 및 추가 (팝업이 열려있는 상태에서)
+    try:
+        search_input_selectors = [
+            (By.CSS_SELECTOR, 'input.se-popup-place-search-input'),
+            (By.CSS_SELECTOR, '.place_search_input input'),
+            (By.CSS_SELECTOR, 'input[title*="장소"]'),
+            (By.XPATH, '//input[contains(@placeholder, "장소")]'),
+        ]
+        
+        for loc in locations:
+            search_input = None
+            driver.switch_to.default_content()
+            
+            # 검색창 찾기 (모든 iframe 순회)
+            frames_to_try = [None] # None means default_content
+            try:
+                iframes = driver.find_elements(By.TAG_NAME, "iframe")
+                frames_to_try.extend(iframes)
+            except: pass
+            
+            for iframe in frames_to_try:
+                driver.switch_to.default_content()
+                if iframe:
+                    try: driver.switch_to.frame(iframe)
+                    except: continue
+                    
+                for sel_by, sel_val in search_input_selectors:
+                    try:
+                        inp = driver.find_element(sel_by, sel_val)
+                        if inp.is_displayed():
+                            search_input = inp
+                            break
+                    except Exception:
+                        pass
+                if search_input:
+                    break
+                    
+            if not search_input:
+                # mainFrame 내부 iframe도 검사
+                try:
+                    driver.switch_to.default_content()
+                    driver.switch_to.frame("mainFrame")
+                    iframes_main = driver.find_elements(By.TAG_NAME, "iframe")
+                    for iframe in iframes_main:
+                        driver.switch_to.default_content()
+                        driver.switch_to.frame("mainFrame")
+                        try: driver.switch_to.frame(iframe)
+                        except: continue
+                        
+                        for sel_by, sel_val in search_input_selectors:
+                            try:
+                                inp = driver.find_element(sel_by, sel_val)
+                                if inp.is_displayed():
+                                    search_input = inp
+                                    break
+                            except Exception:
+                                pass
+                        if search_input: break
+                except:
+                    pass
+
+            if not search_input:
+                print(f"    ⚠ 검색창을 찾지 못해 '{loc}'을 검색할 수 없습니다.")
+                continue
+                
+            search_input.clear()
+            search_input.send_keys(loc)
+            search_input.send_keys(Keys.ENTER)
+            time.sleep(2)
+            
+            # 검색결과 추가 버튼 찾기
+            try:
+                clicked = False
+                # 셀렉터로 먼저 시도
+                add_btn_selectors = [
+                    (By.CSS_SELECTOR, '.place_search_list .add_btn'),
+                    (By.CSS_SELECTOR, 'button.se-popup-place-search-add'),
+                    (By.CSS_SELECTOR, 'button[title="추가"]'),
+                    (By.XPATH, '(//button[contains(text(), "추가") and not(contains(text(), "추가됨"))])[1]'),
+                ]
+                for sel_by, sel_val in add_btn_selectors:
+                    try:
+                        btn = wait_and_find(driver, sel_by, sel_val, timeout=1, clickable=True)
+                        driver.execute_script("arguments[0].click();", btn)
+                        clicked = True
+                        print(f"    ✓ '{loc}' 추가 완료")
+                        break
+                    except Exception:
+                        continue
+                
+                if not clicked:
+                    # JS click fallback (avoid "추가됨")
+                    clicked = driver.execute_script("""
+                        var btns = document.querySelectorAll('button, a, span');
+                        for(var i=0; i<btns.length; i++){
+                            var t = btns[i].innerText;
+                            if(t && t.indexOf("추가") > -1 && t.indexOf("추가됨") === -1){
+                                if(btns[i].tagName !== 'BUTTON') { 
+                                    var b = btns[i].closest('button');
+                                    if(b) { b.click(); return true; }
+                                }
+                                btns[i].click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                    if clicked:
+                        print(f"    ✓ '{loc}' 추가 완료 (JS)")
+                    else:
+                        print(f"    ⚠ '{loc}' 검색 결과에서 추가 버튼을 찾지 못했습니다.")
+            except Exception as e:
+                print(f"    ⚠ '{loc}' 추가 실패: {e}")
+            time.sleep(1)
+        
+        # 3. 우하단 확인 버튼 누르기
+        confirm_selectors = [
+            (By.CSS_SELECTOR, 'button.se-popup-button-confirm'),
+            (By.CSS_SELECTOR, 'button.se-popup-place-button-confirm'),
+            (By.XPATH, '//button[text()="확인"]'),
+        ]
+        
+        # Check current frame first, then try others if necessary
+        confirmed = False
+        for sel_by, sel_val in confirm_selectors:
+            try:
+                confirm_btn = wait_and_find(driver, sel_by, sel_val, timeout=1, clickable=True)
+                driver.execute_script("arguments[0].click();", confirm_btn)
+                print("    ✓ 장소 팝업 확인 버튼 클릭 완료 (모두 반영됨)")
+                confirmed = True
+                time.sleep(2)
+                break
+            except Exception:
+                continue
+                
+        if not confirmed:
+            # Try JS
+            confirmed = driver.execute_script("""
+                var btns = document.querySelectorAll('button, a, span');
+                for(var i=0; i<btns.length; i++){
+                    if(btns[i].innerText && btns[i].innerText.trim() === "확인"){
+                        if(btns[i].tagName !== 'BUTTON') { 
+                            var b = btns[i].closest('button');
+                            if(b) { b.click(); return true; }
+                        }
+                        btns[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            """)
+            if confirmed:
+                print("    ✓ 장소 팝업 확인 버튼 클릭 완료 (JS)")
+            else:
+                print("    ⚠ 팝업 적용(확인) 버튼을 찾지 못했습니다.")
+        
+        return confirmed
+        
+    except Exception as e:
+        print(f"    ❌ 장소 첨부 중 에러 발생: {e}")
+        return False
 def set_editor_font_size(driver, size_level):
     """에디터 툴바에서 폰트 크기를 변경합니다. (예: 11, 13, 15, 19, 24)"""
     try:
@@ -1370,6 +1591,12 @@ for i in range(0, len(segments), 2):
             actions = ActionChains(driver)
             actions.send_keys(Keys.ENTER).perform()
             time.sleep(0.5)
+
+# ──────────────────────────────────────────────
+# 5. 마지막 장소(지도) 첨부
+# ──────────────────────────────────────────────
+insert_locations(driver)
+time.sleep(2)
 
 # ──────────────────────────────────────────────
 # 완료
