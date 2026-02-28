@@ -162,15 +162,15 @@ def enhance_blog_content(blog_content):
                         "2. 본문 내용에 친근한 이모지와 이모티콘을 적절히 추가\n"
                         "3. 글의 문맥이 전환되거나 강조하고 싶은 부분, 시작과 끝부분 등에 '**[스티커]**' 태그를 6~10개 정도 자연스럽게 삽입 (나중에 고양이 스티커로 변환됨)\n"
                         "4. 모바일에 최적화되도록 문단을 짧게(1~2문장) 나누고 줄바꿈을 자주 할 것\n"
-                        "5. 기존의 [헬스장사진], [무료사진], [구분선], [스티커] 태그는 삭제하지 말고 반드시 그대로 유지할 것. (절대 임의로 [사진첨부] 등으로 변경하지 말 것)\n"
-                        "6. 인용구 처리를 위해 인용하고 싶은 문장 앞뒤로 '[인용구] 문장내용 [/인용구]' 형식으로 감쌀 것\n"
-                        "7. 중요도에 따라 강조가 필요한 곳은 글자 크기를 키우기 위해 줄 앞에 '# ' 또는 '## '을 붙일 것 (제목 크기)\n"
-                        "8. 핵심 단어나 문장은 양옆에 '**'를 붙여서 굵게(볼드체) 처리할 것 (예: **중요한 내용**)\n"
-                        "9. 전체적인 내용과 문맥은 원본을 유지하면서 가독성만 높일 것\n\n"
-                        "10. 원본에 있는 [사진첨부] 태그는 문맥에 맞춰서 다음 두 개 중 하나로 변환할 것:\n"
+                        "5. 기존의 [헬스장사진], [무료사진], [구분선], [스티커] 태그는 삭제하지 말고 반드시 그대로 유지할 것. (절대 임의로 위치를 바꾸거나 이름을 변경하지 말 것)\n"
+                        "6. 인용구 처리를 위해 **1줄 이내의 짧고 핵심적인 명언이나 강조 문구** 앞뒤로만 '[인용구] 문장내용 [/인용구]' 형식으로 감쌀 것. (문단 전체를 감싸지 말 것, 최대 2회 사용)\n"
+                        "7. 중요도에 따라 강조가 필요한 곳은 글자 크기를 키우기 위해 줄 앞에 '# ' 또는 '## '을 붙일 것 (단, 첫 줄 제목 제외)\n"
+                        "8. 핵심 단어나 문장은 양옆에 '**'를 붙여서 굵게(볼드체) 처리할 것\n"
+                        "9. 원본에 있는 [사진첨부] 태그는 문맥에 맞춰서 다음 두 개 중 하나로 변환할 것:\n"
                         "    - 헬스장 시설, 기구, 트레이너, 회원 모습 등이 들어가야 자연스러운 위치에는 '[헬스장사진]'\n"
-                        "    - 음식, 영양, 일반적인 운동 자세, 지식 설명 등 정보성 사진이 필요한 위치에는 '[무료사진]'\n\n"
-                        "출력 형식은 반드시 첫 줄에 제목, 그 다음 줄부터 완성된 본문을 출력하세요."
+                        "    - 음식, 영양, 일반적인 운동 자세, 지식 설명 등 정보성 사진이 필요한 위치에는 '[무료사진]'\n"
+                        "10. **모든 해시태그(#)**는 반드시 본문의 내용이 완전히 끝난 **맨 마지막 줄**에 모아서 작성할 것.\n\n"
+                        "출력 형식은 반드시 첫 줄에 딱 '제목: [생성된 제목]'만 작성하고, 두 번째 줄부터 본문을 시작하세요. 제목에 **나 # 같은 마크다운 기호를 쓰지 마세요."
                     )
                 },
                 {
@@ -184,14 +184,25 @@ def enhance_blog_content(blog_content):
         
         result = response.choices[0].message.content.strip()
         
-        # 제목과 본문 분리
+        # 제목과 본문 분리 로직 강화
         lines = result.split('\n')
         title = "당근헬스가 알려주는 오늘의 건강 트렌드! 🏃‍♂️🔥"
         content_lines = []
+        import re
         
         for line in lines:
-            if line.startswith("제목:"):
-                title = line.replace("제목:", "").strip().strip('"').strip("'")
+            line_str = line.strip()
+            if not line_str:
+                content_lines.append(line)
+                continue
+                
+            # 정규식으로 마크다운 포함 제목 찾기 (예: **제목:**, # 제목: 등)
+            match = re.match(r'^[\#\*\s]*제목:\s*(.*)', line_str, re.IGNORECASE)
+            if match:
+                title = match.group(1).replace('**', '').replace('"', '').replace("'", '').strip()
+            elif "제목:" in line_str and len(content_lines) == 0:
+                # 첫 번째 문단에 '제목:'이 포함되어 있다면 그것도 제목으로 취급
+                title = line_str.replace("제목:", "").replace('**', '').replace('#', '').strip()
             else:
                 content_lines.append(line)
                 
@@ -661,9 +672,23 @@ def generate_ai_image(keyword, image_index):
         response.raise_for_status()
         data = response.json()
         
+        # 이미 사용한 이미지 URL을 기억하기 위한 전역 변수
+        if not hasattr(generate_ai_image, "used_urls"):
+            generate_ai_image.used_urls = set()
+        
         if data.get("totalHits", 0) > 0 and len(data.get("hits", [])) > 0:
-            # 첫 번째 이미지 URL (largeImageURL은 429 에러 발생할 수 있어 webformatURL 사용)
-            image_url = data["hits"][0]["webformatURL"]
+            import random
+            # 상위 5개 결과 중 사용 안 한 이미지 우선 선택
+            candidates = data["hits"][:5]
+            random.shuffle(candidates)
+            
+            image_url = candidates[0]["webformatURL"]
+            for hit in candidates:
+                if hit["webformatURL"] not in generate_ai_image.used_urls:
+                    image_url = hit["webformatURL"]
+                    break
+            
+            generate_ai_image.used_urls.add(image_url)
             
             # 다운로드
             headers = {
@@ -683,15 +708,22 @@ def generate_ai_image(keyword, image_index):
         else:
             print(f"    ⚠ 검색 결과 없음. 기본 키워드로 재시도...")
             # 기본 키워드로 재시도 (피트니스 관련 기본 이미지)
-            fallback_url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q=gym+workout&image_type=photo&orientation=horizontal&category=health&per_page=10"
+            fallback_url = f"https://pixabay.com/api/?key={PIXABAY_API_KEY}&q=gym+workout&image_type=photo&orientation=horizontal&category=health&per_page=15"
             f_response = requests.get(fallback_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
             f_data = f_response.json()
             
             if f_data.get("totalHits", 0) > 0:
                 import random
-                # 여러 번 시도 시 중복 방지를 위해 무작위 선택
-                hit = random.choice(f_data["hits"])
-                image_url = hit["webformatURL"]
+                candidates = f_data["hits"]
+                random.shuffle(candidates)
+                
+                image_url = candidates[0]["webformatURL"]
+                for hit in candidates:
+                    if hit["webformatURL"] not in generate_ai_image.used_urls:
+                        image_url = hit["webformatURL"]
+                        break
+                        
+                generate_ai_image.used_urls.add(image_url)
                 
                 headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -969,66 +1001,28 @@ def click_editor_button(driver, button_class):
 
 
 def insert_quotation(driver):
-    """[인용구] 태그 → 에디터 인용구 블록 삽입 (다양한 스타일 랜덤 선택)"""
-    import random
+    """[인용구] 태그 → 에디터 인용구 기본 블록 삽입 (기본 스타일 1번 클릭으로 단순화)"""
     selectors = [
         'se-insert-quotation-default-toolbar-button',
         'se-insert-menu-button-quotation',
     ]
     for sel in selectors:
         if click_editor_button(driver, sel):
-            print("    → 인용구 드롭다운 열림")
-            time.sleep(1)
-            try:
-                # 드롭다운에서 스타일 버튼 찾기
-                style_btns = driver.find_elements(By.CSS_SELECTOR, '.se-popup-quotation button, .se-layer-quotation button, [class*="quotation"] button.se-insert-menu-sub-panel-button, [class*="quotation"] button[class*="component-edge"]')
-                if style_btns:
-                    # 첫 두 개 버튼은 주로 '인용구 선택' 같은 헤더용이므로 제외
-                    valid_btns = [btn for btn in style_btns if btn.get_attribute('title') == '' and btn.text == '']
-                    if not valid_btns:
-                        valid_btns = style_btns
-                    
-                    pick = random.randint(0, len(valid_btns) - 1)
-                    driver.execute_script("arguments[0].click();", valid_btns[pick])
-                    print(f"    ✓ 인용구 스타일 {pick+1}번 삽입 완료")
-                    time.sleep(0.5)
-                    return True
-            except Exception as e:
-                print(f"    ⚠ 인용구 스타일 선택 실패: {e}")
-                
-            # 실패 시에도 기본 클릭은 된 상태이므로 성공으로 간주
+            print("    ✓ 인용구 블록 삽입 완료")
             return True
     print("    ⚠ 인용구 버튼을 찾지 못했습니다.")
     return False
 
 
 def insert_horizontal_line(driver):
-    """[구분선] 태그 → 에디터 구분선 삽입 (다양한 스타일 랜덤 선택)"""
-    import random
+    """[구분선] 태그 → 에디터 구분선 삽입 (기본 스타일 1번 클릭으로 단순화)"""
     selectors = [
         'se-insert-horizontal-line-default-toolbar-button',
         'se-insert-menu-button-horizontalLine',
     ]
     for sel in selectors:
         if click_editor_button(driver, sel):
-            print("    → 구분선 드롭다운 열림")
-            time.sleep(1)
-            try:
-                # 드롭다운에서 스타일 버튼 찾기
-                style_btns = driver.find_elements(By.CSS_SELECTOR, '.se-popup-horizontalLine button, .se-layer-horizontalLine button, [class*="horizontalLine"] button.se-insert-menu-sub-panel-button, [class*="horizontalLine"] button[class*="component-edge"]')
-                if style_btns:
-                    valid_btns = [btn for btn in style_btns if btn.get_attribute('title') == '' and btn.text == '']
-                    if not valid_btns:
-                        valid_btns = style_btns
-                    
-                    pick = random.randint(0, len(valid_btns) - 1)
-                    driver.execute_script("arguments[0].click();", valid_btns[pick])
-                    print(f"    ✓ 구분선 스타일 {pick+1}번 삽입 완료")
-                    time.sleep(0.5)
-                    return True
-            except Exception as e:
-                print(f"    ⚠ 구분선 스타일 선택 실패: {e}")
-                
+            print("    ✓ 구분선 삽입 완료")
             return True
     print("    ⚠ 구분선 버튼을 찾지 못했습니다.")
     return False
@@ -1239,7 +1233,8 @@ def process_text_segment(driver, text, body_elem):
             if not in_quotation:
                 insert_quotation(driver)
                 in_quotation = True
-                set_editor_font(driver, "바른히피")  # 인용구 내에서도 폰트 재적용 시도
+                # 안내 텍스트('내용을 입력하세요')가 지워지도록 글자를 먼저 입력해야 함.
+                # 폰트를 여기서 적용하면 포커스가 날아가서 원문 텍스트가 지워지지 않는 오류 발생.
             continue
             
         if seg == '[/인용구]':
@@ -1290,6 +1285,10 @@ def process_text_segment(driver, text, body_elem):
                 toggle_bold(driver)
             else:
                 set_editor_font_size(driver, 15) # 본문 기본 크기
+                
+            # 인용구 진입 후 첫 글자를 쓸 때 폰트를 적용 (포커스 유지)
+            if in_quotation:
+                set_editor_font(driver, "바른히피")
                 
             # 볼드체 파싱 (**text**)
             parts = re.split(r'(\*\*.*?\*\*)', line)
